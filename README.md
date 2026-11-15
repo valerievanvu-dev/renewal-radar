@@ -1,5 +1,7 @@
 # Renewal Radar
 
+**Live demo:** https://valerievanvu-dev.github.io/renewal-radar/
+
 A post-deployment console for an AI service desk. It answers the questions a deployment success team needs every week:
 
 - **Who is at risk?** Accounts ranked by annual recurring revenue (ARR) at risk, weighted by health and days to renewal.
