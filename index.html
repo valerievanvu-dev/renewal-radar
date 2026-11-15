@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Renewal Radar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: an operator console. Summary strip, then a dense ranked table; drill-down views share one left-aligned column grid. */
+:root {
+  --bg: #f4f5f2;
+  --surface: #ffffff;
+  --ink: #1b2420;
+  --muted: #5f6b66;
+  --line: #dde2de;
+  --accent: #1f6f5c;
+  --accent-soft: #e2f0eb;
+  --good: #2f8a4c; --good-bg: #e4f3e8;
+  --warn: #a8670b; --warn-bg: #fbf0dc;
+  --bad: #b23a2e;  --bad-bg: #f9e3e0;
+  --code-bg: #f0f2ef;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121715; --surface: #1a211e; --ink: #e6ebe8; --muted: #9aa8a2; --line: #2c3632;
+    --accent: #5cc0a3; --accent-soft: #1f322c;
+    --good: #6fcf8a; --good-bg: #1c3123; --warn: #e3a64a; --warn-bg: #352a17; --bad: #f08376; --bad-bg: #3a201d;
+    --code-bg: #141a18; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121715; --surface: #1a211e; --ink: #e6ebe8; --muted: #9aa8a2; --line: #2c3632;
+  --accent: #5cc0a3; --accent-soft: #1f322c;
+  --good: #6fcf8a; --good-bg: #1c3123; --warn: #e3a64a; --warn-bg: #352a17; --bad: #f08376; --bad-bg: #3a201d;
+  --code-bg: #141a18; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--font-body); }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 64px; display: grid; gap: 20px; }
+header.top { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; }
+h1 { font-family: var(--font-display); font-size: 30px; line-height: 1.1; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 17px; margin: 0; font-weight: 600; text-wrap: balance; }
+h3 { font-size: 14px; margin: 0; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+p { margin: 0; }
+.sub { color: var(--muted); max-width: 70ch; margin-top: 6px; }
+.badge-note { font: 12px var(--font-mono); color: var(--muted); border: 1px dashed var(--line); padding: 6px 10px; border-radius: 6px; }
+nav.tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+nav.tabs button { font: 500 14px var(--font-body); background: none; border: 0; color: var(--muted); padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+nav.tabs button:hover { color: var(--ink); }
+button:focus-visible, select:focus-visible, a:focus-visible, th:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px; min-width: 0; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 4px; }
+.tile .k { font-size: 12px; color: var(--muted); }
+.tile .v { font: 600 26px/1.1 var(--font-body); font-variant-numeric: tabular-nums; }
+.tile .d { font-size: 12px; color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; align-items: start; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+th { font-size: 12px; font-weight: 500; color: var(--muted); }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--ink); }
+td.num, th.num { text-align: right; }
+tbody tr.click { cursor: pointer; }
+tbody tr.click:hover { background: var(--accent-soft); }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 2px 9px; border-radius: 999px; }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill.good { color: var(--good); background: var(--good-bg); }
+.pill.warn { color: var(--warn); background: var(--warn-bg); }
+.pill.bad { color: var(--bad); background: var(--bad-bg); }
+.pill.neutral { color: var(--muted); background: var(--code-bg); }
+.score { font-weight: 600; font-variant-numeric: tabular-nums; display: inline-block; min-width: 2ch; }
+.bar { height: 6px; background: var(--code-bg); border-radius: 3px; overflow: hidden; min-width: 80px; }
+.bar > i { display: block; height: 100%; background: var(--accent); }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.mono { font-family: var(--font-mono); font-size: 13px; }
+.queue { display: grid; gap: 10px; }
+.qi { display: grid; grid-template-columns: 6px 1fr auto; gap: 12px; align-items: start; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.qi .stripe { align-self: stretch; border-radius: 3px; }
+.qi .stripe.bad { background: var(--bad); } .qi .stripe.warn { background: var(--warn); } .qi .stripe.good { background: var(--good); }
+.qi .t { font-weight: 600; }
+.qi .why { color: var(--muted); font-size: 13px; }
+.btn { font: 500 13px var(--font-body); border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 7px 12px; border-radius: 7px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.row.between { justify-content: space-between; }
+select { font: 14px var(--font-body); padding: 7px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+pre { margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px; overflow-x: auto; font: 12.5px/1.55 var(--font-mono); white-space: pre; }
+pre.wrapit { white-space: pre-wrap; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 14px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line); display: inline-flex; gap: 6px; align-items: center; }
+.chip.off { border-style: dashed; color: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot.good { background: var(--good); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+.sig { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.sig summary { list-style: none; cursor: pointer; padding: 14px 16px; display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; }
+.sig summary::-webkit-details-marker { display: none; }
+.sig[open] summary { border-bottom: 1px solid var(--line); }
+.sig .body { padding: 16px; display: grid; gap: 14px; }
+.legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 3px; display: inline-block; border-radius: 2px; }
+.prose { max-width: 72ch; display: grid; gap: 10px; }
+.prose ul { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.formula { font: 13px/1.7 var(--font-mono); background: var(--code-bg); border-radius: 8px; padding: 12px 14px; border: 1px solid var(--line); overflow-x: auto; }
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: 1; }
+footer { color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); padding-top: 14px; }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media (max-width: 520px) { h1 { font-size: 24px; } .tile .v { font-size: 22px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Renewal Radar</h1>
+      <p class="sub">A post-deployment console for an AI service desk: which customers are healthy, which renewals are at risk, which broken workflows to fix first, and where to expand next. Built by Valerie Vu as a working sample for Serval's Agent Deployment team.</p>
+    </div>
+    <span class="badge-note">Independent concept · synthetic data · as of Nov 15, 2026</span>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button role="tab" id="tab-portfolio" data-view="portfolio" aria-selected="true">Portfolio</button>
+    <button role="tab" id="tab-account" data-view="account" aria-selected="false">Account deep dive</button>
+    <button role="tab" id="tab-diagnostics" data-view="diagnostics" aria-selected="false">Workflow diagnostics</button>
+    <button role="tab" id="tab-method" data-view="method" aria-selected="false">How it works</button>
+  </nav>
+
+  <!-- PORTFOLIO -->
+  <section id="view-portfolio" class="view" aria-labelledby="tab-portfolio">
+    <div class="tiles" id="kpis"></div>
+    <div class="card">
+      <div class="row between">
+        <h2>Accounts, ranked by annual recurring revenue (ARR) at risk</h2>
+        <span class="small muted">Click a row to open the account. Click a column to sort.</span>
+      </div>
+      <div class="scroll"><table id="acct-table"></table></div>
+    </div>
+    <div class="card">
+      <div class="row between">
+        <h2>This week's playbook queue</h2>
+        <span class="small muted">Generated from the data: one owner, many accounts, no extra headcount.</span>
+      </div>
+      <div class="queue" id="queue"></div>
+    </div>
+  </section>
+
+  <!-- ACCOUNT -->
+  <section id="view-account" class="view" aria-labelledby="tab-account" hidden>
+    <div class="row between">
+      <div class="row">
+        <label for="acct-select" class="small muted">Account</label>
+        <select id="acct-select"></select>
+      </div>
+      <div class="row" id="acct-pills"></div>
+    </div>
+    <div class="tiles" id="acct-kpis"></div>
+    <div class="grid2">
+      <div class="card">
+        <div class="row between"><h2>Automation rate, last 12 weeks</h2>
+          <div class="legend"><span><i style="background:var(--accent)"></i>Resolved by automation</span><span><i style="background:var(--muted)"></i>60% target</span></div>
+        </div>
+        <div id="trend-chart"></div>
+        <p class="small muted" id="trend-note"></p>
+      </div>
+      <div class="card">
+        <h2>Health score breakdown</h2>
+        <div id="health-break"></div>
+        <dl class="kv" id="acct-facts"></dl>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row between">
+        <h2>Automation gaps: the next workflows to build</h2>
+        <span class="small muted">Ranked by agent hours handed back per month if lifted to the realistic ceiling.</span>
+      </div>
+      <div class="scroll"><table id="gap-table"></table></div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h2>Expansion whitespace</h2>
+        <p class="small muted">Departments not yet live, sized from this customer's headcount and request rates seen across the portfolio.</p>
+        <div id="whitespace"></div>
+      </div>
+      <div class="card">
+        <h2>Integrations</h2>
+        <div class="chips" id="integrations"></div>
+        <p class="small muted" id="integ-note"></p>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <div class="row between"><h2>Draft: renewal brief for the account team</h2><button class="btn" data-copy="brief-out">Copy</button></div>
+        <pre class="wrapit" id="brief-out"></pre>
+      </div>
+      <div class="card">
+        <div class="row between"><h2>Draft: workflow scaffold for the top gap</h2><button class="btn" data-copy="wf-out">Copy</button></div>
+        <p class="small muted">Illustrative TypeScript against a generic workflow interface, written the way a plain-language prompt would be turned into code. Not Serval's actual software development kit (SDK).</p>
+        <pre id="wf-out"></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- DIAGNOSTICS -->
+  <section id="view-diagnostics" class="view" aria-labelledby="tab-diagnostics" hidden>
+    <div class="card">
+      <div class="row between">
+        <h2>Failed workflow runs, grouped by error signature</h2>
+        <span class="small muted" id="diag-total"></span>
+      </div>
+      <p class="small muted">Each group shows the failing API request and response, the root cause read from the code path, the fix, and which customers it touches. Fixing one signature clears it for every affected account.</p>
+    </div>
+    <div class="queue" id="sigs"></div>
+  </section>
+
+  <!-- METHOD -->
+  <section id="view-method" class="view" aria-labelledby="tab-method" hidden>
+    <div class="grid2">
+      <div class="card prose">
+        <h2>Why this exists</h2>
+        <p>An AI service desk sells on one promise: tickets stop arriving because agents resolve them. After go-live, the renewal depends on whether that promise keeps compounding. This console turns raw ticket and workflow-run data into three answers a Deployment Success Engineer needs every Monday:</p>
+        <ul>
+          <li><strong>Who is at risk</strong>, weighted by ARR and days to renewal.</li>
+          <li><strong>What is broken</strong>, grouped by error signature so one code fix clears many accounts.</li>
+          <li><strong>Where to grow</strong>: the next workflow to build inside a live department, and the next department to switch on.</li>
+        </ul>
+        <p>Everything else (renewal brief, workflow scaffold, playbook queue) is generated from those answers so the motion scales without adding headcount in step with customers.</p>
+      </div>
+      <div class="card prose">
+        <h2>Health score (0–100)</h2>
+        <div class="formula">health = 0.30·automation + 0.25·adoption<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ 0.15·momentum + 0.15·reliability<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ 0.15·sentiment</div>
+        <ul class="small">
+          <li><strong>Automation</strong>: share of the last 4 weeks' tickets resolved with no human, scored against a 60% target.</li>
+          <li><strong>Adoption</strong>: monthly unique requesters ÷ licensed seats, scored against 45%.</li>
+          <li><strong>Momentum</strong>: automation rate, last 4 weeks vs first 4 of 12. Flat scores 50; +10 points scores 100.</li>
+          <li><strong>Reliability</strong>: workflow run failure rate. 0% scores 100; 10% or more scores 0.</li>
+          <li><strong>Sentiment</strong>: customer satisfaction (CSAT) on a 1–5 scale, 3.5 scores 0 and 4.8 scores 100.</li>
+        </ul>
+        <p class="small">Bands: 75+ healthy, 55–74 watch, under 55 at risk. An account is a <strong>priority</strong> when it is not healthy and renews within 120 days.</p>
+      </div>
+    </div>
+    <div class="card">
+      <h2>The SQL behind the account table</h2>
+      <p class="small muted">Written for a warehouse holding ticket and workflow-run events. The page itself computes the same numbers in the browser from synthetic data.</p>
+      <pre id="sql-out"></pre>
+    </div>
+    <div class="card prose">
+      <h2>How I'd run it in production</h2>
+      <ul>
+        <li>Nightly job computes scores and posts the playbook queue to the deployment team's Slack channel; anything newly "at risk" pages the account owner.</li>
+        <li>New error signatures open an engineering ticket automatically with the request, response and affected tenants attached.</li>
+        <li>Renewal briefs are drafted 120, 90 and 30 days out, so account executives (AEs) walk into every renewal with numbers the customer recognizes.</li>
+        <li>Gap rankings feed working sessions with the customer's IT, HR, Finance and Legal teams: we arrive with the next three workflows already sized.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>All companies, people and numbers on this page are fictional and generated for demonstration. Not affiliated with or endorsed by Serval. Built by Valerie Vu · valerievu.com</footer>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+"use strict";
+const TODAY = new Date("2026-11-15T00:00:00");
+
+// ---------- deterministic random ----------
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hash(s) { let h = 2166136261; for (const c of s) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+
+// ---------- catalog ----------
+// rate = requests per 1,000 seats per 30 days; mins = human handling minutes; ceil = realistic automation ceiling
+const CATS = [
+  { id: "app_access",  name: "Software access request",       dept: "IT",      rate: 62, mins: 18, ceil: .92, integ: "Okta" },
+  { id: "pw_mfa",      name: "Password or multi-factor authentication (MFA) reset", dept: "IT", rate: 48, mins: 12, ceil: .95, integ: "Okta" },
+  { id: "onboard",     name: "New hire onboarding",            dept: "IT",      rate: 9,  mins: 95, ceil: .85, integ: "Workday" },
+  { id: "offboard",    name: "Employee offboarding",           dept: "IT",      rate: 6,  mins: 70, ceil: .88, integ: "Workday" },
+  { id: "groups",      name: "Google Group / distribution list change", dept: "IT", rate: 30, mins: 10, ceil: .93, integ: "Google Workspace" },
+  { id: "jit_admin",   name: "Just-in-time admin access",      dept: "IT",      rate: 14, mins: 20, ceil: .90, integ: "Okta" },
+  { id: "hardware",    name: "Laptop or hardware issue",       dept: "IT",      rate: 22, mins: 40, ceil: .35, integ: "Jira Service Management" },
+  { id: "vpn",         name: "VPN troubleshooting",            dept: "IT",      rate: 16, mins: 25, ceil: .55, integ: "Slack" },
+  { id: "pto_q",       name: "Paid time off (PTO) policy question", dept: "HR",  rate: 28, mins: 6,  ceil: .90, integ: "Slack" },
+  { id: "emp_verify",  name: "Employment verification letter", dept: "HR",      rate: 6,  mins: 20, ceil: .90, integ: "Workday" },
+  { id: "benefits_q",  name: "Benefits enrollment question",   dept: "HR",      rate: 12, mins: 15, ceil: .70, integ: "Slack" },
+  { id: "expense_q",   name: "Expense policy question",        dept: "Finance", rate: 20, mins: 6,  ceil: .90, integ: "Slack" },
+  { id: "vendor_on",   name: "Vendor onboarding",              dept: "Finance", rate: 4,  mins: 45, ceil: .75, integ: "Jira Service Management" },
+  { id: "card_limit",  name: "Corporate card limit increase",  dept: "Finance", rate: 7,  mins: 15, ceil: .85, integ: "Slack" },
+  { id: "nda",         name: "Non-disclosure agreement (NDA) request", dept: "Legal", rate: 5, mins: 30, ceil: .85, integ: "Jira Service Management" },
+  { id: "contract_in", name: "Contract review intake",         dept: "Legal",   rate: 4,  mins: 25, ceil: .60, integ: "Jira Service Management" },
+];
+const DEPTS = ["IT", "HR", "Finance", "Legal"];
+const INTEGS = ["Okta", "Workday", "Google Workspace", "Slack", "Jira Service Management"];
+
+// ---------- error signatures ----------
+const SIGS = {
+  okta_scope: {
+    title: "Okta app assignment returns 403 after token rotation", short: "Fix Okta 403 on app assignment", extra: { northwind: 31, lumen: 12 },
+    integ: "Okta", cats: ["app_access", "jit_admin", "pw_mfa"],
+    req: `POST /api/v1/apps/0oa8x2kq1ZfG9h3d7/users
+Authorization: Bearer eyJraWQiOi…(service app token)
+Content-Type: application/json
+
+{ "id": "00u5m1x9TzQ0b8w6", "scope": "USER" }`,
+    res: `HTTP/1.1 403 Forbidden
+{
+  "errorCode": "E0000006",
+  "errorSummary": "You do not have permission to perform the requested action",
+  "errorCauses": []
+}`,
+    cause: "The customer rotated their Okta service app credentials on Oct 27. The new token was granted okta.users.manage but not okta.apps.manage, so every workflow that assigns an app or elevates access fails at the assignment step. Password and MFA resets that also touch app assignment fail the same way.",
+    fix: "Add the okta.apps.manage scope to the service app and re-consent. On our side: check scopes at connection time and alert on a scope drop, instead of discovering it from failed runs.",
+    patch: `// integrations/okta/health.ts
+const REQUIRED = ["okta.users.manage", "okta.apps.manage", "okta.groups.manage"];
+
+export async function checkOktaScopes(conn: Connection) {
+  const granted = await conn.introspectToken();      // scopes on the live token
+  const missing = REQUIRED.filter(s => !granted.scopes.includes(s));
+  if (missing.length) {
+    await alerts.raise({
+      tenant: conn.tenantId,
+      severity: "high",
+      title: \`Okta token missing \${missing.join(", ")}\`,
+      runbook: "okta-scope-drop",
+    });
+  }
+}`,
+  },
+  slack_alias: {
+    title: "Slack user lookup fails for staff with alias email addresses", short: "Fix Slack alias-email lookup", extra: { northwind: 19 },
+    integ: "Slack", cats: ["app_access", "pw_mfa", "groups", "vpn"],
+    req: `GET https://slack.com/api/users.lookupByEmail?email=j.ortiz%40saltboxretail.com
+Authorization: Bearer xoxb-…`,
+    res: `HTTP/1.1 200 OK
+{ "ok": false, "error": "users_not_found" }`,
+    cause: "Store associates are provisioned in Okta with a primary email (jortiz@stores.saltboxretail.com) but their Slack profile uses an alias. The requester-resolution step matches on exact email only, so the workflow cannot find who is asking and stops before any action runs. This hits frontline staff hardest, which is also why adoption at this account is low.",
+    fix: "Resolve the requester by Slack user ID from the event payload first, then map to the identity provider through the user's linked Okta ID. Fall back to email only when neither exists.",
+    patch: `// core/identity/resolveRequester.ts
+export async function resolveRequester(evt: SlackEvent, idp: IdentityProvider) {
+  const slackUser = await slack.users.info({ user: evt.user });   // ID, never email
+  const linked = await idp.findByExternalId("slack", slackUser.id);
+  if (linked) return linked;
+  const byEmail = await idp.findByEmail(slackUser.profile.email); // last resort
+  if (byEmail) await idp.linkExternalId(byEmail.id, "slack", slackUser.id);
+  return byEmail ?? null;
+}`,
+  },
+  workday_429: {
+    title: "Workday worker lookups hit rate limits during Monday onboarding batches", short: "Fix Workday rate limiting", extra: { brightline: 22, tidewater: 15 },
+    integ: "Workday", cats: ["onboard", "offboard", "emp_verify"],
+    req: `GET /ccx/api/v1/lumencredit/workers?search=new_hire&limit=100
+Authorization: Bearer …`,
+    res: `HTTP/1.1 429 Too Many Requests
+Retry-After: 30
+{ "error": "rate limit exceeded" }`,
+    cause: "All new-hire onboarding workflows fire at 8:00 local time on Mondays. Each one pages through the full worker list instead of fetching the single worker, so 40 parallel runs exceed the tenant's request limit and the retries give up after three attempts.",
+    fix: "Fetch the worker by ID from the trigger payload, honor the Retry-After header with jittered backoff, and queue onboarding runs with a concurrency cap per tenant.",
+    patch: `// integrations/workday/client.ts
+async function get(path: string, attempt = 0): Promise<Response> {
+  const res = await http.get(path);
+  if (res.status !== 429 || attempt >= 6) return res;
+  const wait = Number(res.headers["retry-after"] ?? 2 ** attempt) * 1000;
+  await sleep(wait + Math.random() * 1000);                 // jitter
+  return get(path, attempt + 1);
+}
+// onboarding: workday.get(\`/workers/\${trigger.workerId}\`) instead of a list search`,
+  },
+  groups_409: {
+    title: "Google Group membership step is not idempotent", short: "Fix Google Group 409 handling", extra: { brightline: 14, halcyon: 9 },
+    integ: "Google Workspace", cats: ["groups", "onboard"],
+    req: `POST https://admin.googleapis.com/admin/directory/v1/groups/eng-all%40orbitgames.io/members
+{ "email": "mpark@orbitgames.io", "role": "MEMBER" }`,
+    res: `HTTP/1.1 409 Conflict
+{ "error": { "code": 409, "message": "Member already exists." } }`,
+    cause: "When an approver retries a request, or onboarding already added the user, the workflow treats 409 as a failure and marks the ticket failed. The user actually has the access they asked for, yet they get an error message and open a second ticket.",
+    fix: "Treat 409 'Member already exists' as success for this step and record it as a no-op in the audit log.",
+    patch: `// steps/google/addGroupMember.ts
+try {
+  await directory.members.insert({ groupKey, requestBody: { email, role } });
+} catch (e) {
+  if (e.code === 409 && /already exists/i.test(e.message)) {
+    audit.log({ step: "addGroupMember", outcome: "noop_already_member", email, groupKey });
+    return { ok: true, changed: false };
+  }
+  throw e;
+}
+return { ok: true, changed: true };`,
+  },
+  jira_field: {
+    title: "Escalation to Jira fails on a newly required custom field", short: "Fix Jira required-field escalation", extra: { tidewater: 18 },
+    integ: "Jira Service Management", cats: ["hardware", "vendor_on", "nda"],
+    req: `POST /rest/api/3/issue
+{ "fields": { "project": {"key":"ITHELP"}, "issuetype": {"name":"Service Request"},
+  "summary": "Laptop screen flickering", "description": {…} } }`,
+    res: `HTTP/1.1 400 Bad Request
+{ "errors": { "customfield_10032": "Location is required." } }`,
+    cause: "The customer's Jira admin made 'Location' a required field on the ITHELP project. Escalations from the agent to a human queue now fail, so tickets the agent cannot solve are dropped instead of handed off.",
+    fix: "Read required fields from the create-meta endpoint when the connection syncs, map 'Location' from the requester's Workday office, and fail loudly to the deployment team if a required field cannot be filled.",
+    patch: `// integrations/jira/createIssue.ts
+const meta = await jira.get(\`/rest/api/3/issue/createmeta/\${projectKey}/issuetypes/\${typeId}\`);
+const required = meta.fields.filter(f => f.required && !(f.key in fields));
+for (const f of required) {
+  const value = fieldMapper.resolve(f, requester);   // e.g. Location <- Workday office
+  if (value == null) throw new MissingFieldError(f.key, projectKey);
+  fields[f.key] = value;
+}`,
+  },
+};
+
+// ---------- accounts (fictional) ----------
+const ACCOUNTS = [
+  { id: "tidewater", name: "Tidewater Health", industry: "Healthcare", seats: 5200, arr: 612000, renewal: "2027-01-01", live: "2026-02-10", depts: ["IT", "HR"], cover: .78, auto: .60, trend: .004, adoption: .31, csat: 3.9, fail: .11, owner: "Strategic", incident: { sig: "okta_scope", week: 9 }, integ: { Okta: "bad", Workday: "good", Slack: "good", "Jira Service Management": "good" } },
+  { id: "brightline", name: "Brightline Media", industry: "Media", seats: 3800, arr: 455000, renewal: "2027-06-30", live: "2025-12-01", depts: ["IT", "HR"], cover: .85, auto: .66, trend: .006, adoption: .47, csat: 4.6, fail: .02, owner: "Enterprise", integ: { Okta: "good", Workday: "good", "Google Workspace": "good", Slack: "good" } },
+  { id: "saltbox", name: "Saltbox Retail", industry: "Retail", seats: 2800, arr: 298000, renewal: "2027-02-14", live: "2026-05-04", depts: ["IT"], cover: .55, auto: .46, trend: -.002, adoption: .16, csat: 4.0, fail: .09, owner: "Enterprise", incident: { sig: "slack_alias", week: 0 }, integ: { Okta: "good", Slack: "warn", "Google Workspace": "good", "Jira Service Management": "good" } },
+  { id: "lumen", name: "Lumen Credit", industry: "Fintech", seats: 1900, arr: 264000, renewal: "2027-03-31", live: "2026-04-15", depts: ["IT", "Finance"], cover: .70, auto: .55, trend: .002, adoption: .36, csat: 4.3, fail: .06, owner: "Mid-Market", incident: { sig: "workday_429", week: 6 }, integ: { Okta: "good", Workday: "warn", Slack: "good", "Jira Service Management": "good" } },
+  { id: "northwind", name: "Northwind Freight", industry: "Logistics", seats: 2400, arr: 236000, renewal: "2027-09-30", live: "2026-08-18", depts: ["IT"], cover: .60, auto: .50, trend: .013, adoption: .29, csat: 4.4, fail: .03, owner: "Enterprise", integ: { Okta: "good", Workday: "good", Slack: "good" } },
+  { id: "halcyon", name: "Halcyon Bio", industry: "Biotech", seats: 1100, arr: 148000, renewal: "2026-12-20", live: "2025-12-15", depts: ["IT", "HR", "Legal"], cover: .88, auto: .68, trend: .003, adoption: .52, csat: 4.7, fail: .015, owner: "Mid-Market", integ: { Okta: "good", Workday: "good", "Google Workspace": "good", Slack: "good", "Jira Service Management": "good" } },
+  { id: "orbit", name: "Orbit Games", industry: "Gaming", seats: 900, arr: 112000, renewal: "2027-04-15", live: "2026-03-02", depts: ["IT"], cover: .72, auto: .57, trend: -.006, adoption: .33, csat: 4.0, fail: .07, owner: "Mid-Market", incident: { sig: "groups_409", week: 4 }, integ: { Okta: "good", "Google Workspace": "warn", Slack: "good" } },
+  { id: "kestrel", name: "Kestrel Robotics", industry: "Robotics", seats: 650, arr: 96000, renewal: "2027-08-01", live: "2026-01-20", depts: ["IT", "HR"], cover: .90, auto: .72, trend: .005, adoption: .58, csat: 4.8, fail: .01, owner: "Mid-Market", incident: { sig: "jira_field", week: 10, minor: true }, integ: { Okta: "good", Workday: "good", Slack: "good", "Jira Service Management": "warn" } },
+];
+
+// ---------- build data ----------
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const daysTo = d => Math.round((new Date(d + "T00:00:00") - TODAY) / 86400000);
+
+function build(a) {
+  const rnd = mulberry32(hash(a.id));
+  const sig = a.incident ? SIGS[a.incident.sig] : null;
+  const cats = CATS.filter(c => a.depts.includes(c.dept)).map(c => {
+    const vol = Math.round(a.seats / 1000 * c.rate * (0.75 + rnd() * 0.5));
+    const hasWf = rnd() < a.cover || c.id === "pw_mfa";
+    const base = hasWf ? clamp(c.ceil * (a.auto / 0.62) * (0.85 + rnd() * 0.25), 0, c.ceil) : 0.03 + rnd() * 0.05;
+    const hit = sig && hasWf && sig.cats.includes(c.id) && !a.incident.minor;
+    const now = hit ? base * (a.incident.sig === "slack_alias" ? 0.62 : 0.38) : base;
+    return { ...c, vol, hasWf, base, now, hit };
+  });
+  const total = cats.reduce((s, c) => s + c.vol, 0);
+  // calibrate the pre-incident rate to the account profile
+  const raw = cats.reduce((s, c) => s + c.vol * c.base, 0) / total;
+  cats.forEach(c => {
+    const k = a.auto / raw;
+    const nb = clamp(c.base * k, 0, c.ceil);
+    c.now = c.hit ? nb * (c.now / c.base) : nb;
+    c.base = nb;
+  });
+  const rateNow = cats.reduce((s, c) => s + c.vol * c.now, 0) / total;
+  const rateBase = cats.reduce((s, c) => s + c.vol * c.base, 0) / total;
+  const weeks = [];
+  for (let w = 0; w < 12; w++) {
+    let r = rateBase + a.trend * (w - 11) + (rnd() - 0.5) * 0.025;
+    if (a.incident && w >= a.incident.week) r -= (rateBase - rateNow);
+    const t = Math.round(total / 4.3 * (0.9 + rnd() * 0.2));
+    weeks.push({ w, rate: clamp(r, 0, 1), tickets: t });
+  }
+  // force last 4 weeks average to match category-level rate for consistency
+  const last4 = weeks.slice(8).reduce((s, x) => s + x.rate, 0) / 4;
+  weeks.slice(8).forEach(x => x.rate = clamp(x.rate + (rateNow - last4), 0, 1));
+  const first4 = weeks.slice(0, 4).reduce((s, x) => s + x.rate, 0) / 4;
+  const momentum = rateNow - first4;
+
+  const s = {
+    automation: clamp(rateNow / 0.60 * 100, 0, 100),
+    adoption: clamp(a.adoption / 0.45 * 100, 0, 100),
+    momentum: clamp(50 + momentum * 500, 0, 100),
+    reliability: clamp((1 - a.fail / 0.10) * 100, 0, 100),
+    sentiment: clamp((a.csat - 3.5) / 1.3 * 100, 0, 100),
+  };
+  const health = Math.round(0.30 * s.automation + 0.25 * s.adoption + 0.15 * s.momentum + 0.15 * s.reliability + 0.15 * s.sentiment);
+  const band = health >= 75 ? "good" : health >= 55 ? "warn" : "bad";
+  const days = daysTo(a.renewal);
+  const priority = band !== "good" && days <= 120;
+  const riskWeight = band === "bad" ? 0.6 : band === "warn" ? 0.25 : 0.05;
+  const arrAtRisk = Math.round(a.arr * riskWeight * (days <= 120 ? 1 : 0.6));
+  const hoursSaved = Math.round(cats.reduce((s, c) => s + c.vol * c.now * c.mins, 0) / 60);
+  const gaps = cats.map(c => {
+    const lift = Math.max(0, c.ceil - c.now);
+    return { ...c, lift, hours: Math.round(c.vol * lift * c.mins / 60) };
+  }).filter(c => c.hours >= 2).sort((x, y) => y.hours - x.hours);
+  const whitespace = DEPTS.filter(d => !a.depts.includes(d)).map(d => {
+    const dc = CATS.filter(c => c.dept === d);
+    const vol = Math.round(dc.reduce((s, c) => s + a.seats / 1000 * c.rate, 0));
+    const hrs = Math.round(dc.reduce((s, c) => s + a.seats / 1000 * c.rate * c.ceil * 0.8 * c.mins, 0) / 60);
+    return { dept: d, vol, hrs, top: dc.slice().sort((x, y) => y.rate * y.mins - x.rate * x.mins).slice(0, 2).map(c => c.name) };
+  }).sort((x, y) => y.hrs - x.hrs);
+  const failures = Math.round(total * 1.4 * a.fail); // ~1.4 workflow runs per ticket
+  return { ...a, cats, total, rateNow, rateBase, weeks, momentum, s, health, band, days, priority, arrAtRisk, hoursSaved, gaps, whitespace, failures, sig };
+}
+const DATA = ACCOUNTS.map(build);
+const byId = Object.fromEntries(DATA.map(d => [d.id, d]));
+
+// ---------- helpers ----------
+const $ = s => document.querySelector(s);
+const fmt$ = n => n >= 1e6 ? "$" + (n / 1e6).toFixed(2) + "M" : "$" + Math.round(n / 1000) + "K";
+const pct = (x, d = 0) => (x * 100).toFixed(d) + "%";
+const num = n => n.toLocaleString("en-US");
+const bandLabel = b => ({ good: "Healthy", warn: "Watch", bad: "At risk" })[b];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+function pill(b, text) { return `<span class="pill ${b}">${esc(text || bandLabel(b))}</span>`; }
+
+function spark(weeks, w = 120, h = 30) {
+  const xs = i => 2 + i * (w - 4) / 11;
+  const ys = r => h - 3 - r * (h - 6) / 0.9;
+  const pts = weeks.map((p, i) => `${xs(i).toFixed(1)},${ys(p.rate).toFixed(1)}`).join(" ");
+  const last = weeks[11];
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+    <polygon points="${xs(0)},${h - 1} ${pts} ${xs(11)},${h - 1}" fill="var(--accent-soft)"/>
+    <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round"/>
+    <circle cx="${xs(11)}" cy="${ys(last.rate)}" r="2.6" fill="var(--accent)"/></svg>`;
+}
+
+function topAction(d) {
+  if (d.sig && !d.incident.minor) return d.sig.short;
+  if (d.band === "good" && d.days <= 120) return "Renew early with expansion";
+  if (d.s.adoption < 50) return "Adoption push to frontline teams";
+  if (d.whitespace.length && d.band === "good") return `Expand to ${d.whitespace[0].dept}`;
+  if (d.gaps.length) return `Build: ${d.gaps[0].name.replace(/ \(.*?\)/, "")}`;
+  return "Steady state";
+}
+
+// ---------- portfolio ----------
+let sortKey = "arrAtRisk", sortDir = -1;
+function renderPortfolio() {
+  const arr = DATA.reduce((s, d) => s + d.arr, 0);
+  const renewing = DATA.filter(d => d.days <= 120);
+  const atRisk = DATA.reduce((s, d) => s + d.arrAtRisk, 0);
+  const wHealth = Math.round(DATA.reduce((s, d) => s + d.health * d.arr, 0) / arr);
+  const hrs = DATA.reduce((s, d) => s + d.hoursSaved, 0);
+  $("#kpis").innerHTML = [
+    ["ARR under management", fmt$(arr), `${DATA.length} live customers`],
+    ["Renewing in 120 days", fmt$(renewing.reduce((s, d) => s + d.arr, 0)), `${renewing.length} accounts · ${renewing.filter(d => d.priority).length} priority`],
+    ["Expected ARR at risk", fmt$(atRisk), "Health band × renewal proximity"],
+    ["ARR-weighted health", wHealth + " / 100", bandLabel(wHealth >= 75 ? "good" : wHealth >= 55 ? "warn" : "bad")],
+    ["Agent hours handed back", num(hrs) + " h / mo", "Automated tickets × handling time"],
+  ].map(([k, v, d]) => `<div class="tile"><span class="k">${k}</span><span class="v">${v}</span><span class="d">${d}</span></div>`).join("");
+
+  const cols = [
+    ["name", "Account"], ["health", "Health", 1], ["rateNow", "Automation", 1], ["spark", "12-week trend"], ["adoption", "Adoption", 1],
+    ["arr", "ARR", 1], ["days", "Renews in", 1], ["arrAtRisk", "ARR at risk", 1], ["action", "Next best action"],
+  ];
+  const rows = DATA.slice().sort((x, y) => {
+    const vx = x[sortKey], vy = y[sortKey];
+    return (typeof vx === "string" ? vx.localeCompare(vy) : vx - vy) * sortDir;
+  });
+  $("#acct-table").innerHTML = `<thead><tr>${cols.map(([k, l, n]) => {
+    const sortable = k !== "spark" && k !== "action";
+    const aria = sortKey === k ? ` aria-sort="${sortDir < 0 ? "descending" : "ascending"}"` : "";
+    return `<th class="${n ? "num " : ""}${sortable ? "sortable" : ""}" ${sortable ? `data-sort="${k}" tabindex="0"` : ""}${aria}>${l}${sortKey === k ? (sortDir < 0 ? " ↓" : " ↑") : ""}</th>`;
+  }).join("")}</tr></thead><tbody>${rows.map(d => `
+    <tr class="click" data-acct="${d.id}" tabindex="0">
+      <td><strong>${esc(d.name)}</strong><div class="small muted">${d.industry} · ${num(d.seats)} seats</div></td>
+      <td class="num"><span class="score">${d.health}</span> ${pill(d.band)}</td>
+      <td class="num">${pct(d.rateNow)}</td>
+      <td>${spark(d.weeks)}</td>
+      <td class="num">${pct(d.adoption)}</td>
+      <td class="num">${fmt$(d.arr)}</td>
+      <td class="num">${d.days} days${d.priority ? " " + pill("bad", "Priority") : ""}</td>
+      <td class="num">${d.arrAtRisk ? fmt$(d.arrAtRisk) : "—"}</td>
+      <td class="small" style="white-space:normal;min-width:150px">${esc(topAction(d))}</td>
+    </tr>`).join("")}</tbody>`;
+
+  // queue
+  const items = [];
+  const sigGroups = groupSigs();
+  sigGroups.forEach(g => items.push({ b: "bad", score: g.accts.reduce((t, x) => t + x.arrAtRisk, 0) * 3 + g.runs * 500, t: `Ship fix: ${g.sig.title}`, why: `${num(g.runs)} failed runs in 30 days across ${g.accts.length} customers (${fmt$(g.arr)} ARR): ${g.accts.map(a => a.name).join(", ")}. One fix clears all of them.`, go: ["diagnostics"] }));
+  DATA.filter(d => d.priority).forEach(d => items.push({ b: d.band, score: d.arr * 1.5, t: `Renewal save plan: ${d.name}, ${d.days} days out`, why: `Health ${d.health}. Automation ${pct(d.rateNow)} vs ${pct(d.rateBase)} before the incident; draft renewal brief is ready.`, go: ["account", d.id] }));
+  DATA.filter(d => d.band === "good" && d.days <= 120).forEach(d => items.push({ b: "good", score: d.arr * 3, t: `Early renewal plus expansion: ${d.name}, ${d.days} days out`, why: `Health ${d.health}, ${pct(d.rateNow)} automated, CSAT ${d.csat.toFixed(1)}. Bring the renewal brief and a ${d.whitespace[0] ? d.whitespace[0].dept : "seat"} expansion proposal to the same meeting.`, go: ["account", d.id] }));
+  DATA.filter(d => d.s.adoption < 50).forEach(d => items.push({ b: "warn", score: d.arr, t: `Adoption campaign: ${d.name}`, why: `Only ${pct(d.adoption)} of ${num(d.seats)} seats asked for help this month. Run a training session for frontline managers and pin the Slack shortcut in their team channels.`, go: ["account", d.id] }));
+  DATA.filter(d => d.band === "good" && d.whitespace.length).forEach(d => { const w = d.whitespace[0]; items.push({ b: "good", score: d.arr * 0.8, t: `Expansion: switch on ${w.dept} at ${d.name}`, why: `About ${num(w.vol)} ${w.dept} requests a month and roughly ${num(w.hrs)} hours a month to hand back. Lead with ${w.top[0].toLowerCase()}.`, go: ["account", d.id] }); });
+  items.sort((x, y) => y.score - x.score);
+  $("#queue").innerHTML = items.slice(0, 8).map((it, i) => `
+    <div class="qi"><span class="stripe ${it.b}"></span>
+      <div><div class="t">${esc(it.t)}</div><div class="why">${esc(it.why)}</div></div>
+      <button class="btn" data-go='${JSON.stringify(it.go)}'>Open</button></div>`).join("");
+}
+
+// ---------- account ----------
+let current = "tidewater";
+function renderAccount() {
+  const d = byId[current];
+  $("#acct-select").value = d.id;
+  $("#acct-pills").innerHTML = `${pill(d.band, `${bandLabel(d.band)} · ${d.health}`)} ${d.priority ? pill("bad", "Priority renewal") : ""} <span class="pill neutral">${d.owner} segment</span>`;
+  $("#acct-kpis").innerHTML = [
+    ["Automation rate, last 4 weeks", pct(d.rateNow), d.sig && !d.incident.minor ? `${pct(d.rateBase)} before the incident` : `Target 60%`],
+    ["Tickets, last 30 days", num(d.total), `${num(Math.round(d.total * d.rateNow))} resolved with no human`],
+    ["Agent hours handed back", num(d.hoursSaved) + " h / mo", `≈ ${(d.hoursSaved / 140).toFixed(1)} full-time equivalents (FTE)`],
+    ["Renewal", `${d.days} days`, `${new Date(d.renewal + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} · ${fmt$(d.arr)} ARR`],
+  ].map(([k, v, s]) => `<div class="tile"><span class="k">${k}</span><span class="v">${v}</span><span class="d">${s}</span></div>`).join("");
+
+  // trend chart
+  const W = 520, H = 200, L = 36, R = 34, T = 10, B = 26;
+  const x = i => L + i * (W - L - R) / 11, y = r => T + (1 - r) * (H - T - B);
+  const pts = d.weeks.map((p, i) => `${x(i).toFixed(1)},${y(p.rate).toFixed(1)}`).join(" ");
+  const grid = [0, .25, .5, .75, 1].map(g => `<line x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}" stroke="var(--line)"/><text x="${L - 6}" y="${y(g) + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${g * 100}%</text>`).join("");
+  const labels = d.weeks.map((p, i) => i % 2 === 1 ? `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--muted)">${i === 11 ? "Now" : "W-" + (11 - i)}</text>` : "").join("");
+  let marker = "";
+  if (d.incident && d.incident.week > 0 && !d.incident.minor) {
+    const mx = x(d.incident.week - 0.5);
+    marker = `<line x1="${mx}" x2="${mx}" y1="${T}" y2="${H - B}" stroke="var(--bad)" stroke-dasharray="3 3"/><text x="${mx + 4}" y="${T + 12}" font-size="10" fill="var(--bad)">Incident starts</text>`;
+  }
+  const last = d.weeks[11];
+  $("#trend-chart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Weekly automation rate for ${esc(d.name)}">
+    ${grid}<line x1="${L}" x2="${W - R}" y1="${y(.6)}" y2="${y(.6)}" stroke="var(--muted)" stroke-dasharray="5 4"/>
+    <polygon points="${x(0)},${y(0)} ${pts} ${x(11)},${y(0)}" fill="var(--accent-soft)" opacity=".8"/>
+    <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linejoin="round"/>
+    ${marker}<circle cx="${x(11)}" cy="${y(last.rate)}" r="4" fill="var(--accent)"/>
+    <text x="${x(11) - 6}" y="${y(last.rate) - 9}" text-anchor="end" font-size="11" font-weight="600" fill="var(--ink)">${pct(last.rate)}</text>${labels}</svg>`;
+  $("#trend-note").textContent = d.sig && !d.incident.minor
+    ? (d.incident.week > 0 ? `Drop traced to: ${d.sig.title}. See Workflow diagnostics.` : `Rate has been held down since go-live by: ${d.sig.title}.`)
+    : d.momentum > 0.03 ? `Climbing ${(d.momentum * 100).toFixed(1)} points over 12 weeks as new workflows go live.` : `Stable. Next gains come from the gap list below.`;
+
+  // health breakdown
+  const parts = [["Automation", "automation", .30], ["Adoption", "adoption", .25], ["Momentum", "momentum", .15], ["Reliability", "reliability", .15], ["Sentiment (CSAT)", "sentiment", .15]];
+  $("#health-break").innerHTML = `<table><tbody>${parts.map(([l, k, w]) => {
+    const v = Math.round(d.s[k]); const b = v >= 75 ? "good" : v >= 50 ? "warn" : "bad";
+    return `<tr><td>${l}</td><td class="num muted small">×${w.toFixed(2)}</td><td style="width:45%"><div class="bar"><i style="width:${v}%;background:var(--${b})"></i></div></td><td class="num"><span class="score">${v}</span></td></tr>`;
+  }).join("")}<tr><td><strong>Health score</strong></td><td></td><td></td><td class="num"><strong>${d.health}</strong></td></tr></tbody></table>`;
+  $("#acct-facts").innerHTML = `<dt>Live since</dt><dd>${new Date(d.live + "T00:00:00").toLocaleDateString("en-US", { month: "short", year: "numeric" })}</dd>
+    <dt>Departments live</dt><dd>${d.depts.join(", ")}</dd>
+    <dt>Monthly requesters</dt><dd>${num(Math.round(d.seats * d.adoption))} of ${num(d.seats)} seats (${pct(d.adoption)})</dd>
+    <dt>Workflow failures</dt><dd>${num(d.failures)} in 30 days (${pct(d.fail, 1)} of runs)</dd>
+    <dt>CSAT</dt><dd>${d.csat.toFixed(1)} / 5</dd>`;
+
+  // gaps
+  $("#gap-table").innerHTML = `<thead><tr><th>Request type</th><th>Dept</th><th class="num">Volume / mo</th><th class="num">Automated now</th><th class="num">Ceiling</th><th class="num">Hours to hand back / mo</th><th>Status</th></tr></thead><tbody>${d.gaps.slice(0, 7).map((g, i) => `
+    <tr><td>${i === 0 ? "<strong>" + esc(g.name) + "</strong>" : esc(g.name)}</td><td>${g.dept}</td><td class="num">${num(g.vol)}</td><td class="num">${pct(g.now)}</td><td class="num">${pct(g.ceil)}</td><td class="num"><strong>${num(g.hours)}</strong></td>
+    <td>${g.hit ? pill("bad", "Workflow broken") : g.hasWf ? pill("warn", "Workflow underperforming") : pill("neutral", "No workflow yet")}</td></tr>`).join("")}</tbody>`;
+
+  // whitespace
+  $("#whitespace").innerHTML = d.whitespace.length ? `<table><thead><tr><th>Department</th><th class="num">Est. requests / mo</th><th class="num">Est. hours / mo</th><th>Lead use cases</th></tr></thead><tbody>${d.whitespace.map(w => `<tr><td><strong>${w.dept}</strong></td><td class="num">${num(w.vol)}</td><td class="num">${num(w.hrs)}</td><td class="small" style="white-space:normal">${w.top.map(esc).join("; ")}</td></tr>`).join("")}</tbody></table>`
+    : `<p class="muted small">Every department is live. Growth comes from the gap list and seat expansion.</p>`;
+
+  // integrations
+  $("#integrations").innerHTML = INTEGS.map(n => { const st = d.integ[n]; return st ? `<span class="chip"><span class="dot ${st}"></span>${n}</span>` : `<span class="chip off">${n} · not connected</span>`; }).join("");
+  $("#integ-note").textContent = d.sig ? `${d.sig.integ}: ${d.sig.title.toLowerCase()}.` : "All connected integrations passing health checks.";
+
+  $("#brief-out").textContent = brief(d);
+  $("#wf-out").textContent = scaffold(d, d.gaps.find(g => !g.hit) || d.gaps[0]);
+}
+
+function brief(d) {
+  const g = d.gaps.filter(x => !x.hit).slice(0, 3);
+  const w = d.whitespace[0];
+  const issue = d.sig && !d.incident.minor;
+  return `RENEWAL BRIEF · ${d.name} · renews ${d.renewal} (${d.days} days) · ${fmt$(d.arr)} ARR
+Health ${d.health}/100 (${bandLabel(d.band)})
+
+VALUE DELIVERED (last 30 days)
+• ${num(d.total)} employee requests; ${pct(d.rateNow)} resolved with no human
+• ≈${num(d.hoursSaved)} agent hours handed back (≈${(d.hoursSaved / 140).toFixed(1)} FTE)
+• ${num(Math.round(d.seats * d.adoption))} employees asked for help (${pct(d.adoption)} of seats); CSAT ${d.csat.toFixed(1)}/5
+${issue ? `
+RISK, AND WHAT WE ARE DOING ABOUT IT
+• ${d.sig.title}
+• Impact: automation ${pct(d.rateBase)} → ${pct(d.rateNow)}; ${num(d.failures)} failed runs
+• Fix: ${d.sig.fix.split(". ")[0]}.
+• Ask of customer: ${d.sig.integ} admin to join a 20-minute call this week
+` : ""}
+NEXT 90 DAYS (proposed)
+${g.map((x, i) => `${i + 1}. Automate "${x.name}": ${num(x.vol)}/mo, +${num(x.hours)} h/mo`).join("\n")}
+${w ? `
+EXPANSION
+• Switch on ${w.dept}: ≈${num(w.vol)} requests and ${num(w.hrs)} hours/mo. Lead with ${w.top[0].toLowerCase()}.` : ""}
+
+RECOMMENDED MOTION
+${d.priority ? "Executive check-in within 2 weeks; fix first, then renewal conversation with the proof above." : d.band === "good" ? "Renew early alongside the expansion proposal." : "Monthly success review until health is above 75."}`;
+}
+
+function scaffold(d, g) {
+  if (!g) return "// No open gaps for this account.";
+  const name = g.name.replace(/\(.*?\)/g, "").trim();
+  const slug = g.id.replace(/_/g, "-");
+  const steps = {
+    app_access: `    const app = await ctx.okta.apps.findByName(input.appName);
+    const policy = await ctx.policies.accessFor(app.id, requester);
+    if (policy.requiresApproval) {
+      await ctx.approvals.request({ approver: policy.owner, reason: input.justification });
+    }
+    await ctx.okta.apps.assignUser(app.id, requester.oktaId);
+    return ctx.reply(\`You now have access to \${app.label}.\`);`,
+    pw_mfa: `    await ctx.identity.verify(requester, { method: "slack_dm_challenge" });
+    await ctx.okta.users.resetFactors(requester.oktaId);
+    return ctx.reply("MFA reset. Enroll a new factor at your next sign-in.");`,
+    onboard: `    const worker = await ctx.workday.workers.get(input.workerId);
+    const groups = ctx.mappings.groupsFor(worker.department, worker.location);
+    const user = await ctx.okta.users.create(worker);
+    for (const g of groups) await ctx.okta.groups.addUser(g, user.id);
+    await ctx.google.users.ensure(worker.email);
+    await ctx.slack.invite(worker.email, ctx.mappings.channelsFor(worker.department));
+    return ctx.notify(worker.managerEmail, \`\${worker.name} is set up for day one.\`);`,
+    offboard: `    const worker = await ctx.workday.workers.get(input.workerId);
+    await ctx.okta.users.suspend(worker.oktaId);
+    await ctx.google.users.transferDrive(worker.email, worker.managerEmail);
+    await ctx.slack.users.deactivate(worker.email);
+    return ctx.notify(ctx.team("IT"), \`Offboarded \${worker.name}; drive transferred.\`);`,
+    groups: `    const group = await ctx.google.groups.find(input.groupEmail);
+    if (group.owners.length) await ctx.approvals.request({ approver: group.owners[0] });
+    await ctx.google.groups.addMember(group.email, requester.email); // 409 = already a member, treat as success
+    return ctx.reply(\`Added you to \${group.email}.\`);`,
+    jit_admin: `    const role = await ctx.okta.roles.find(input.role);
+    await ctx.approvals.request({ approver: ctx.team("Security"), reason: input.justification });
+    await ctx.okta.roles.grant(requester.oktaId, role.id, { expiresIn: input.hours * 3600 });
+    return ctx.reply(\`\${role.label} granted for \${input.hours} hours.\`);`,
+  };
+  const body = steps[g.id] || `    const answer = await ctx.knowledge.search(input.question, { team: "${g.dept}" });
+    if (answer.confidence > 0.8) return ctx.reply(answer.text, { sources: answer.sources });
+    return ctx.escalate(ctx.team("${g.dept}"), { summary: input.question });`;
+  return `// Prompt: "When someone asks for ${name.toLowerCase()}, handle it end to end."
+// Customer: ${d.name} · ${num(g.vol)} requests/mo · now ${pct(g.now)} automated
+import { defineWorkflow } from "./workflow";
+
+export default defineWorkflow({
+  id: "${slug}",
+  team: "${g.dept}",
+  trigger: { intent: "${name.toLowerCase()}" },
+  run: async (ctx, input) => {
+    const requester = await ctx.resolveRequester(); // by chat user ID, not email
+${body}
+  },
+});`;
+}
+
+// ---------- diagnostics ----------
+function groupSigs() {
+  const m = {};
+  DATA.filter(d => d.sig).forEach(d => {
+    const k = d.incident.sig;
+    m[k] = m[k] || { key: k, sig: SIGS[k], accts: [], runs: 0, arr: 0 };
+    m[k].accts.push(d); m[k].runs += d.failures; m[k].arr += d.arr;
+  });
+  Object.values(m).forEach(g => Object.entries(g.sig.extra || {}).forEach(([id, n]) => {
+    if (!g.accts.includes(byId[id])) { g.accts.push(byId[id]); g.runs += n; g.arr += byId[id].arr; }
+  }));
+  return Object.values(m).sort((a, b) => b.arr - a.arr);
+}
+function renderDiagnostics() {
+  const gs = groupSigs();
+  $("#diag-total").textContent = `${gs.length} signatures · ${num(gs.reduce((s, g) => s + g.runs, 0))} failed runs in 30 days`;
+  $("#sigs").innerHTML = gs.map((g, i) => {
+    const b = g.accts.some(a => a.band === "bad") ? "bad" : g.accts.some(a => a.band === "warn") ? "warn" : "good";
+    return `<details class="sig" ${i === 0 ? "open" : ""}>
+      <summary><div><strong>${esc(g.sig.title)}</strong><div class="small muted">${g.sig.integ} · ${g.accts.map(a => esc(a.name)).join(", ")}</div></div>
+        <div class="row">${pill(b, num(g.runs) + " failed runs")}<span class="pill neutral">${fmt$(g.arr)} ARR</span></div></summary>
+      <div class="body">
+        <div class="grid2"><div><h3>Request</h3><pre>${esc(g.sig.req)}</pre></div><div><h3>Response</h3><pre>${esc(g.sig.res)}</pre></div></div>
+        <div class="prose"><h3>Root cause</h3><p>${esc(g.sig.cause)}</p><h3>Fix</h3><p>${esc(g.sig.fix)}</p></div>
+        <div><h3 style="margin-bottom:8px">Proposed patch</h3><pre>${esc(g.sig.patch)}</pre></div>
+        <div class="row">${g.accts.map(a => `<button class="btn" data-go='["account","${a.id}"]'>Open ${esc(a.name)}</button>`).join("")}</div>
+      </div></details>`;
+  }).join("");
+}
+
+// ---------- method ----------
+$("#sql-out").textContent = `-- Account health inputs, last 30 days
+WITH tickets AS (
+  SELECT tenant_id,
+         COUNT(*)                                            AS tickets_30d,
+         AVG(CASE WHEN resolved_by = 'agent' THEN 1 ELSE 0 END) AS automation_rate,
+         COUNT(DISTINCT requester_id)                        AS monthly_requesters,
+         AVG(csat_score)                                     AS csat
+  FROM   service_tickets
+  WHERE  created_at >= CURRENT_DATE - INTERVAL '30 days'
+  GROUP  BY tenant_id
+),
+runs AS (
+  SELECT tenant_id,
+         AVG(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)  AS failure_rate
+  FROM   workflow_runs
+  WHERE  started_at >= CURRENT_DATE - INTERVAL '30 days'
+  GROUP  BY tenant_id
+)
+SELECT a.name, a.arr, a.renewal_date,
+       a.renewal_date - CURRENT_DATE                         AS days_to_renewal,
+       t.automation_rate,
+       t.monthly_requesters::float / a.licensed_seats        AS adoption,
+       r.failure_rate, t.csat
+FROM   accounts a
+JOIN   tickets t USING (tenant_id)
+JOIN   runs    r USING (tenant_id)
+ORDER  BY days_to_renewal;
+
+-- Error signatures: one fix, many tenants
+SELECT integration, http_status, error_code,
+       COUNT(*)                   AS failed_runs,
+       COUNT(DISTINCT tenant_id)  AS tenants,
+       MIN(started_at)            AS first_seen
+FROM   workflow_runs
+WHERE  status = 'failed' AND started_at >= CURRENT_DATE - INTERVAL '30 days'
+GROUP  BY 1, 2, 3
+ORDER  BY tenants DESC, failed_runs DESC;`;
+
+// ---------- routing & events ----------
+const VIEWS = ["portfolio", "account", "diagnostics", "method"];
+function show(view, acct) {
+  if (acct && byId[acct]) current = acct;
+  VIEWS.forEach(v => {
+    $("#view-" + v).hidden = v !== view;
+    $("#tab-" + v).setAttribute("aria-selected", String(v === view));
+  });
+  if (view === "account") renderAccount();
+  const h = view === "account" ? "account-" + current : view;
+  if (location.hash.slice(1) !== h) { try { history.replaceState(null, "", "#" + h); } catch (e) {} }
+  window.scrollTo({ top: 0 });
+}
+function fromHash() {
+  const h = location.hash.slice(1);
+  if (h.startsWith("account-")) return show("account", h.slice(8));
+  show(VIEWS.includes(h) ? h : "portfolio");
+}
+
+document.querySelectorAll("nav.tabs button").forEach(b => b.addEventListener("click", () => show(b.dataset.view)));
+$("#acct-select").innerHTML = DATA.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join("");
+$("#acct-select").addEventListener("change", e => show("account", e.target.value));
+document.addEventListener("click", e => {
+  const go = e.target.closest("[data-go]");
+  if (go) { const [v, a] = JSON.parse(go.dataset.go); return show(v, a); }
+  const row = e.target.closest("tr[data-acct]");
+  if (row) return show("account", row.dataset.acct);
+  const th = e.target.closest("th[data-sort]");
+  if (th) { const k = th.dataset.sort; sortDir = sortKey === k ? -sortDir : -1; sortKey = k; renderPortfolio(); return; }
+  const cp = e.target.closest("[data-copy]");
+  if (cp) {
+    const text = document.getElementById(cp.dataset.copy).textContent;
+    navigator.clipboard.writeText(text).then(() => toast("Copied")).catch(() => toast("Copy blocked here. Select the text and copy it."));
+  }
+});
+document.addEventListener("keydown", e => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const row = e.target.closest && e.target.closest("tr[data-acct]");
+  if (row) { e.preventDefault(); show("account", row.dataset.acct); }
+  const th = e.target.closest && e.target.closest("th[data-sort]");
+  if (th) { e.preventDefault(); th.click(); }
+});
+function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 1600); }
+window.addEventListener("hashchange", fromHash);
+
+renderPortfolio();
+renderDiagnostics();
+fromHash();
+window.__RR = DATA; // for inspection
+})();
+</script>
+</body>
+</html>
